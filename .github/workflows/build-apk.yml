@@ -1,4 +1,3 @@
-
 name: Construire APK Android
 
 on:
@@ -27,37 +26,70 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Détecter le dossier du projet
+        id: project
+        shell: bash
+        run: |
+          if [ -f package.json ] && { [ -f capacitor.config.ts ] || [ -f capacitor.config.json ] || [ -f capacitor.config.js ]; }; then
+            project_dir="."
+          elif [ -f Lib-main/package.json ] && { [ -f Lib-main/capacitor.config.ts ] || [ -f Lib-main/capacitor.config.json ] || [ -f Lib-main/capacitor.config.js ]; }; then
+            project_dir="Lib-main"
+          else
+            echo "ERREUR : projet Liberté introuvable à la racine ou dans Lib-main/."
+            exit 1
+          fi
+          echo "PROJECT_DIR=$project_dir" >> "$GITHUB_ENV"
+          echo "Projet détecté dans : $project_dir"
+
       - name: Vérifier les fichiers du projet
+        working-directory: ${{ env.PROJECT_DIR }}
         run: |
           test -f package.json || (echo "ERREUR : package.json introuvable" && exit 1)
           test -f capacitor.config.ts -o -f capacitor.config.json -o -f capacitor.config.js || (echo "ERREUR : configuration Capacitor introuvable" && exit 1)
+          if [ -f package-lock.json ]; then
+            node -e "const l=require('./package-lock.json'); if(!l.lockfileVersion || l.lockfileVersion < 1) process.exit(1)" || (echo "ERREUR : package-lock.json est invalide" && exit 1)
+            echo "package-lock.json présent et valide."
+          else
+            echo "AVERTISSEMENT : package-lock.json absent ; il sera généré depuis package.json avant npm ci."
+          fi
 
       - name: Installer les dépendances
-        run: npm ci
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          if [ ! -f package-lock.json ]; then
+            npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          fi
+          npm ci --no-audit --no-fund
 
       - name: Tester les fonctions
+        working-directory: ${{ env.PROJECT_DIR }}
         run: node --test tests/*.test.cjs
 
       - name: Vérifier Capacitor Android
+        working-directory: ${{ env.PROJECT_DIR }}
         run: |
           npm ls @capacitor/core @capacitor/cli @capacitor/android
           npx cap --version
 
       - name: Ajouter Android si nécessaire
+        working-directory: ${{ env.PROJECT_DIR }}
         run: |
           if [ ! -d android ]; then
             npx cap add android
           fi
 
       - name: Synchroniser Capacitor
+        working-directory: ${{ env.PROJECT_DIR }}
         run: npm run sync
 
       - name: Vérifier le projet Android
+        working-directory: ${{ env.PROJECT_DIR }}
         run: |
           test -f android/gradlew || (echo "ERREUR : gradlew introuvable" && exit 1)
           test -f android/app/build.gradle -o -f android/app/build.gradle.kts || (echo "ERREUR : configuration Gradle Android introuvable" && exit 1)
 
       - name: Compiler APK
+        working-directory: ${{ env.PROJECT_DIR }}
         run: |
           cd android
           chmod +x gradlew
@@ -67,6 +99,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: liberte-apk-debug
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: ${{ env.PROJECT_DIR }}/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
