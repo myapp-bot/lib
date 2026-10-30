@@ -1,0 +1,6 @@
+{
+	"appId": "mg.libertelibre.app",
+	"appName": "Liberté",
+	"webDir": "www",
+	"bundledWebRuntime": false
+}
